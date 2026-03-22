@@ -8,7 +8,7 @@ from pgvector.psycopg2 import register_vector
 
 # --- Configuration ---
 # 1. Database configuration. Use DB_CONNECTION_STRING to override individual values.
-DB_CONNECTION_STRING = os.getenv("DB_CONNECTION_STRING")
+DB_CONNECTION_STRING = os.getenv("DB_CONNECTION_STRING", "").strip()
 if not DB_CONNECTION_STRING:
     DB_USER = os.getenv("DB_USER", "philip")
     DB_PASS = os.getenv("DB_PASS", "1234")
@@ -24,14 +24,11 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 TOP_K_CHUNKS = int(os.getenv("TOP_K_CHUNKS", "5"))
 
 if CHUNK_OVERLAP >= CHUNK_SIZE:
-    raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE.")
+    raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE.")
 
 # --- Database Setup ---
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""
-    if not DB_CONNECTION_STRING:
-        print("Error: DB_CONNECTION_STRING is not set.")
-        return None
     try:
         conn = psycopg2.connect(DB_CONNECTION_STRING)
         register_vector(conn)
