@@ -70,6 +70,7 @@ The backend reads configuration from environment variables (see `.env.example`):
 - `MODEL_NAME`
 - `CHUNK_SIZE`, `CHUNK_OVERLAP`
 - `TOP_K_CHUNKS`
+- `FLASK_DEBUG` (set to `true` to enable debug mode)
 
 ## API Endpoints
 - `POST /upload` (multipart form-data with `file`)

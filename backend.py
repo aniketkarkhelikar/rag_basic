@@ -206,4 +206,5 @@ def delete_file():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=5000)
+    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
+    app.run(debug=debug_mode, port=5000)
