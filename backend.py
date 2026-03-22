@@ -24,7 +24,9 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 TOP_K_CHUNKS = int(os.getenv("TOP_K_CHUNKS", "5"))
 
 if CHUNK_OVERLAP >= CHUNK_SIZE:
-    raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE.")
+    raise ValueError(
+        f"CHUNK_OVERLAP must be less than CHUNK_SIZE (got {CHUNK_OVERLAP} >= {CHUNK_SIZE})."
+    )
 
 # --- Database Setup ---
 def get_db_connection():
