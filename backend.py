@@ -7,18 +7,27 @@ import psycopg2
 from pgvector.psycopg2 import register_vector
 
 # --- Configuration ---
-# 1. IMPORTANT: Update this with your PostgreSQL connection string
-# Format: "postgresql://USER:PASSWORD@HOST:PORT/DATABASE_NAME"
-# See setup_guide.md for instructions on creating this user and DB.
-DB_CONNECTION_STRING = "postgresql://philip:1234@localhost:5432/vector_db"
+# 1. Database configuration. Use DB_CONNECTION_STRING to override individual values.
+DB_CONNECTION_STRING = os.getenv("DB_CONNECTION_STRING", "").strip()
+if not DB_CONNECTION_STRING:
+    DB_USER = os.getenv("DB_USER", "philip")
+    DB_PASS = os.getenv("DB_PASS", "1234")
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_NAME = os.getenv("DB_NAME", "vector_db")
+    DB_CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# 2. This model is the default for semtools, as requested.
-# It produces 768-dimensional vectors.
-MODEL_NAME = 'minishlab/potion-multilingual-128M'
-VECTOR_DIMENSION = 256
-CHUNK_SIZE = 190
-CHUNK_OVERLAP = 50
-TOP_K_CHUNKS = 5
+# 2. Model + chunking configuration.
+MODEL_NAME = os.getenv("MODEL_NAME", "minishlab/potion-multilingual-128M")
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "190"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+TOP_K_CHUNKS = int(os.getenv("TOP_K_CHUNKS", "5"))
+
+if CHUNK_OVERLAP >= CHUNK_SIZE:
+    raise ValueError(
+        "CHUNK_OVERLAP must be strictly less than CHUNK_SIZE "
+        f"(got {CHUNK_OVERLAP} >= {CHUNK_SIZE})."
+    )
 
 # --- Database Setup ---
 def get_db_connection():
@@ -75,6 +84,8 @@ CORS(app)  # Allow frontend to call this backend
 print(f"Loading embedding model '{MODEL_NAME}'... (This may take a moment)")
 model = SentenceTransformer(MODEL_NAME)
 print("Embedding model loaded.")
+VECTOR_DIMENSION = model.get_sentence_embedding_dimension()
+print(f"Embedding dimension: {VECTOR_DIMENSION}")
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -102,19 +113,21 @@ def upload_file():
         conn = get_db_connection()
         if conn is None:
             return jsonify({"error": "Database connection failed"}), 500
-            
-        with conn.cursor() as cur:
-            # Clear old chunks for this file
-            cur.execute("DELETE FROM documents WHERE file_name = %s;", (file_name,))
-            
-            # Insert new chunks
-            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                cur.execute(
-                    "INSERT INTO documents (file_name, chunk_index, content, embedding) VALUES (%s, %s, %s, %s)",
-                    (file_name, i, chunk, embedding)
-                )
-        conn.commit()
-        conn.close()
+
+        try:
+            with conn.cursor() as cur:
+                # Clear old chunks for this file
+                cur.execute("DELETE FROM documents WHERE file_name = %s;", (file_name,))
+
+                # Insert new chunks
+                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                    cur.execute(
+                        "INSERT INTO documents (file_name, chunk_index, content, embedding) VALUES (%s, %s, %s, %s)",
+                        (file_name, i, chunk, embedding)
+                    )
+            conn.commit()
+        finally:
+            conn.close()
         
         return jsonify({"message": f"Successfully added {len(chunks)} chunks for {file_name}."}), 200
 
@@ -137,20 +150,21 @@ def get_context():
         conn = get_db_connection()
         if conn is None:
             return jsonify({"error": "Database connection failed"}), 500
-            
-        with conn.cursor() as cur:
-            # Using L2 distance (<->) for similarity search
-            cur.execute(
-                """
-                SELECT file_name, chunk_index, content FROM documents
-                ORDER BY embedding <-> %s
-                LIMIT %s;
-                """,
-                (query_vector, TOP_K_CHUNKS)
-            )
-            results = cur.fetchall()
-        
-        conn.close()
+
+        try:
+            with conn.cursor() as cur:
+                # Using L2 distance (<->) for similarity search
+                cur.execute(
+                    """
+                    SELECT file_name, chunk_index, content FROM documents
+                    ORDER BY embedding <-> %s
+                    LIMIT %s;
+                    """,
+                    (query_vector, TOP_K_CHUNKS)
+                )
+                results = cur.fetchall()
+        finally:
+            conn.close()
         
         # 3. Format and return chunks
         retrieved_chunks = [
@@ -167,7 +181,7 @@ def get_context():
 @app.route('/delete', methods=['POST'])
 def delete_file():
     """Deletes all chunks associated with a file."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     file_name = data.get('fileName')
     if not file_name:
         return jsonify({"error": "No file name provided"}), 400
@@ -176,11 +190,13 @@ def delete_file():
         conn = get_db_connection()
         if conn is None:
             return jsonify({"error": "Database connection failed"}), 500
-            
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM documents WHERE file_name = %s;", (file_name,))
-        conn.commit()
-        conn.close()
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM documents WHERE file_name = %s;", (file_name,))
+            conn.commit()
+        finally:
+            conn.close()
         
         return jsonify({"message": f"Successfully deleted file {file_name}."}), 200
 
@@ -190,4 +206,5 @@ def delete_file():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=5000)
+    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
+    app.run(debug=debug_mode, port=5000)

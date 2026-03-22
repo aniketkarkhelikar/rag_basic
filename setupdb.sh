@@ -3,9 +3,9 @@ set -e
 
 # --- Configuration ---
 # Set your desired database user and password here.
-DB_USER="philip"
-DB_PASS="1234"
-DB_NAME="vector_db"
+DB_USER="${DB_USER:-philip}"
+DB_PASS="${DB_PASS:-1234}"
+DB_NAME="${DB_NAME:-vector_db}"
 # --- End Configuration ---
 
 echo "--- Starting PostgreSQL Setup ---"
